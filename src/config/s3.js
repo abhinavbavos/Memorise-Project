@@ -1,4 +1,3 @@
-// src/config/s3.js
 import {
   S3Client,
   PutObjectCommand,
@@ -25,20 +24,8 @@ export async function getPresignedPutURL({ key, contentType, expires = 60 }) {
     ContentType: contentType,
     ...(REQUIRE_SSE ? { ServerSideEncryption: "AES256" } : {}),
   };
-
   const command = new PutObjectCommand(params);
-
-  // ✅ Remove unwanted checksum headers
-  return await getSignedUrl(s3Client, command, {
-    expiresIn: expires,
-    unsignableHeaders: new Set([
-      "x-amz-sdk-checksum-algorithm",
-      "x-amz-checksum-crc32",
-      "x-amz-checksum-crc32c",
-      "x-amz-checksum-sha1",
-      "x-amz-checksum-sha256",
-    ]),
-  });
+  return await getSignedUrl(s3Client, command, { expiresIn: expires });
 }
 
 // Generate a presigned GET URL
