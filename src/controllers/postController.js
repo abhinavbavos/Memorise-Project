@@ -6,7 +6,6 @@ import PlanLimits from "../models/PlanLimits.js";
 import Joi from "joi";
 import mongoose from "mongoose";
 
-
 // --- helpers ---
 async function decoratePosts(rows, { includeFileUrl = false } = {}) {
   // small batch signing; page sizes are small in UI
@@ -32,6 +31,27 @@ async function decoratePosts(rows, { includeFileUrl = false } = {}) {
 }
 
 // --- endpoints ---
+// export async function presignPostFile(req, res) {
+//   const limits = await PlanLimits.getLimits(req.user.plan);
+//   const { contentType, size } = req.query;
+
+//   if (!limits.allowedMime.includes(contentType)) {
+//     return res.status(400).json({ error: "Mime not allowed" });
+//   }
+//   if (size && Number(size) / (1024 * 1024) > limits.maxFileSizeMB) {
+//     return res.status(400).json({ error: "File too large" });
+//   }
+
+//   const key = `user-uploads/${req.user.id}/posts/${uuidv4()}`;
+//   const url = await getPresignedPutURL({ key, contentType }); // IMPORTANT: await
+//   // optional: tell client which headers to include (SSE)
+//   const requiredHeaders =
+//     process.env.REQUIRE_SSE === "true"
+//       ? { "x-amz-server-side-encryption": "AES256" }
+//       : {};
+//   res.json({ key, url, requiredHeaders });
+// }
+
 export async function presignPostFile(req, res) {
   const limits = await PlanLimits.getLimits(req.user.plan);
   const { contentType, size } = req.query;
@@ -44,12 +64,14 @@ export async function presignPostFile(req, res) {
   }
 
   const key = `user-uploads/${req.user.id}/posts/${uuidv4()}`;
-  const url = await getPresignedPutURL({ key, contentType }); // IMPORTANT: await
-  // optional: tell client which headers to include (SSE)
-  const requiredHeaders =
-    process.env.REQUIRE_SSE === "true"
-      ? { "x-amz-server-side-encryption": "AES256" }
-      : {};
+
+  // ⬇️ get BOTH the URL and the headers actually used in the signature
+  const { url, requiredHeaders } = await getPresignedPutURL({
+    key,
+    contentType,
+  });
+
+  // ⬇️ just forward them to the client
   res.json({ key, url, requiredHeaders });
 }
 
