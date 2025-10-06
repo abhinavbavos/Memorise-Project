@@ -1,0 +1,71 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production build
+/build
+/dist
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor & system files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.swn
+*.swm
+*.sublime-workspace
+*.sublime-project
+.idea/
+.vscode/
+*.iml
+
+# Cache
+.cache
+/.parcel-cache
+.next
+out
+/.nuxt
+/.vuepress/dist
+/.docusaurus
+/.expo
+.expo-shared
+.happypack
+.fusebox/
+.rpt2_cache/
+.eslintcache
+.stylelintcache
+.terraform/
+.sass-cache
+
+# Storybook
+/.storybook-out
+/storybook-static
+
+# Misc
+*.tgz
+*.log
+*.tmp
+*.pid
+*.seed
+*.pid.lock
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
