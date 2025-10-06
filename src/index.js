@@ -1,4 +1,4 @@
-// index.js
+// src/index.js
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -22,33 +22,75 @@ import metaRoutes from "./routes/meta.js";
 
 const app = express();
 const PORT = process.env.PORT || 4060;
-// app.listen(PORT, "0.0.0.0", () => console.log(`API running on :${PORT}`));
 
+// If running behind a proxy (NGINX/ELB/etc.)
 app.set("trust proxy", 1);
 
-// Security & core middleware
-app.use(helmet());
+/* =========================
+   CORS (allowlist + credentials)
+   ========================= */
+const defaultAllowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://13.235.238.42", // frontend over HTTP using IP (testing)
+  "http://memorise.kpfchickland.com",
+  "https://memorise.kpfchickland.com",
+];
+
+// Optional: allow override via env (comma-separated)
+const envOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const allowedOrigins = [...new Set([...defaultAllowedOrigins, ...envOrigins])];
+
 app.use(
   cors({
-    origin: "*", // Allow all origins
-    credentials: true, // ❌ Note: This doesn't work with "*" (see below)
+    origin(origin, cb) {
+      // allow non-browser clients like curl/postman (no Origin header)
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
+// Ensure preflight succeeds quickly
+app.options("*", cors());
+
+/* =========================
+   Security & core middleware
+   ========================= */
+app.use(helmet());
 app.use(express.json({ limit: "2mb" }));
 app.use(mongoSanitize());
 app.use(xss());
 app.use(compression());
 if (process.env.NODE_ENV !== "production") app.use(morgan("dev"));
 
+// Rate limiter (skip OPTIONS to avoid counting preflight)
 app.use(
-  rateLimit({ windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true })
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.method === "OPTIONS",
+  })
 );
 
-// Health
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+/* ========
+   Health
+   ======== */
+app.get("/api/health", (_req, res) => res.status(200).json({ ok: true }));
 
-// Routes
+/* ========
+   Routes
+   ======== */
 app.use("/api/auth", authRoutes);
 app.use("/api/meta", metaRoutes);
 app.use("/api/users", userRoutes);
@@ -59,18 +101,30 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/billing", billingRoutes);
 app.use("/api/files", fileRoutes);
 
-// 404 + error handler
+/* =========================
+   404 + error handler
+   ========================= */
 app.use((_req, res) => res.status(404).json({ error: "Not found" }));
 app.use((err, _req, res, _next) => {
+  // Minimal, safe error surface
   console.error(err);
-  res.status(err.status || 500).json({ error: err.message || "Server error" });
+  const status = err.status || 500;
+  const message =
+    process.env.NODE_ENV === "production"
+      ? status === 500
+        ? "Server error"
+        : err.message || "Request error"
+      : err.message || "Server error";
+  res.status(status).json({ error: message });
 });
 
-// Start
+/* ========
+   Start
+   ======== */
 connectDB()
-  .then(() =>
-    app.listen(PORT, "0.0.0.0", () => console.log(`API running on :${PORT}`))
-  )
+  .then(() => {
+    app.listen(PORT, "0.0.0.0", () => console.log(`API running on :${PORT}`));
+  })
   .catch((e) => {
     console.error("DB connection failed:", e);
     process.exit(1);
