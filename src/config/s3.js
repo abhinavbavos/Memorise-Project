@@ -14,11 +14,32 @@ const s3Client = new S3Client({
   },
 });
 
-// Default to requiring SSE (your bucket policy needs it)
-const REQUIRE_SSE =
-  String(process.env.REQUIRE_SSE ?? "true").toLowerCase() === "true";
+// Strip checksum headers during presign (prevents x-amz-sdk-checksum-* from being hoisted)
+s3Client.middlewareStack.add(
+  (next, ctx) => async (args) => {
+    if (ctx.commandName === "PutObjectCommand") {
+      // ensure none of the checksum fields are present
+      delete args.input?.ChecksumCRC32;
+      delete args.input?.ChecksumCRC32C;
+      delete args.input?.ChecksumSHA1;
+      delete args.input?.ChecksumSHA256;
+      // and if the request already has headers, remove them
+      if (args.request?.headers) {
+        delete args.request.headers["x-amz-sdk-checksum-algorithm"];
+        delete args.request.headers["x-amz-checksum-crc32"];
+        delete args.request.headers["x-amz-checksum-crc32c"];
+        delete args.request.headers["x-amz-checksum-sha1"];
+        delete args.request.headers["x-amz-checksum-sha256"];
+      }
+    }
+    return next(args);
+  },
+  { name: "stripChecksumsForPresign", step: "build", priority: "high" }
+);
 
-// Generate a presigned PUT URL + the headers the client MUST send
+// If you still want server-side encryption, keep it here; otherwise omit.
+const REQUIRE_SSE = false; // you removed the policy; set true later if you re-enforce
+
 export async function getPresignedPutURL({ key, contentType, expires = 60 }) {
   const cmd = new PutObjectCommand({
     Bucket: process.env.S3_BUCKET,
@@ -27,7 +48,17 @@ export async function getPresignedPutURL({ key, contentType, expires = 60 }) {
     ...(REQUIRE_SSE ? { ServerSideEncryption: "AES256" } : {}),
   });
 
-  const url = await getSignedUrl(s3Client, cmd, { expiresIn: expires });
+  const url = await getSignedUrl(s3Client, cmd, {
+    expiresIn: expires,
+    // hard block any accidental checksum headers from being signed/hoisted
+    unsignableHeaders: new Set([
+      "x-amz-sdk-checksum-algorithm",
+      "x-amz-checksum-crc32",
+      "x-amz-checksum-crc32c",
+      "x-amz-checksum-sha1",
+      "x-amz-checksum-sha256",
+    ]),
+  });
 
   const requiredHeaders = {
     "Content-Type": contentType || "application/octet-stream",
@@ -43,12 +74,8 @@ export async function getPresignedGetURL({
   asDownloadName,
 }) {
   const params = { Bucket: process.env.S3_BUCKET, Key: key };
-  if (asDownloadName) {
+  if (asDownloadName)
     params.ResponseContentDisposition = `attachment; filename="${asDownloadName}"`;
-  }
-  const command = new GetObjectCommand(params);
-  return await getSignedUrl(s3Client, command, { expiresIn: expires });
+  const cmd = new GetObjectCommand(params);
+  return await getSignedUrl(s3Client, cmd, { expiresIn: expires });
 }
-
-export { getPresignedGetURL as getSignedGetURL };
-export default s3Client;
